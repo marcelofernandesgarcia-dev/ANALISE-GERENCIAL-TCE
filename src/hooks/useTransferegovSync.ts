@@ -31,6 +31,76 @@ const STORAGE_KEYS = {
   totalRecords: 'transferegov_totalRecords',
 } as const;
 
+// Helper to expose openDB globally in the browser console
+if (typeof window !== 'undefined' && typeof indexedDB !== 'undefined') {
+  (window as any).openDB = function (dbName: string, version = 1) {
+    return new Promise((resolve, reject) => {
+      const request = indexedDB.open(dbName, version);
+      request.onupgradeneeded = () => {
+        const db = request.result;
+        if (!db.objectStoreNames.contains('transfers')) {
+          db.createObjectStore('transfers', { keyPath: 'id' });
+        }
+      };
+      request.onsuccess = () => {
+        const db = request.result;
+        resolve({
+          getAll(storeName: string) {
+            return new Promise((res, rej) => {
+              const transaction = db.transaction(storeName, 'readonly');
+              const store = transaction.objectStore(storeName);
+              const req = store.getAll();
+              req.onsuccess = () => res(req.result);
+              req.onerror = () => rej(req.error);
+            });
+          },
+          put(storeName: string, value: any) {
+            return new Promise<void>((res, rej) => {
+              const transaction = db.transaction(storeName, 'readwrite');
+              const store = transaction.objectStore(storeName);
+              const req = store.put(value);
+              req.onsuccess = () => res();
+              req.onerror = () => rej(req.error);
+            });
+          },
+          clear(storeName: string) {
+            return new Promise<void>((res, rej) => {
+              const transaction = db.transaction(storeName, 'readwrite');
+              const store = transaction.objectStore(storeName);
+              const req = store.clear();
+              req.onsuccess = () => res();
+              req.onerror = () => rej(req.error);
+            });
+          }
+        });
+      };
+      request.onerror = () => reject(request.error);
+    });
+  };
+}
+
+export const mockTransfers = [
+  { id: '700001', convenente: 'Prefeitura A', cnpj: '11.111.111/0001-11', valor: 150000, situacaoTg: 'Em execução', statusConciliacao: 'Correto' },
+  { id: '700002', convenente: 'Prefeitura B', cnpj: '22.222.222/0001-22', valor: 250000, situacaoTg: 'Em execução', statusConciliacao: 'Inconsistência (Rito Patológico)' },
+  { id: '700003', convenente: 'Prefeitura C', cnpj: '33.333.333/0001-33', valor: 350000, situacaoTg: 'Aguardando prestação de contas', statusConciliacao: 'Correto' },
+  { id: '700004', convenente: 'Prefeitura D', cnpj: '44.444.444/0001-44', valor: 450000, situacaoTg: 'Inadimplente', statusConciliacao: 'Alerta' },
+  { id: '700005', convenente: 'Prefeitura E', cnpj: '55.555.555/0001-55', valor: 550000, situacaoTg: 'Prestação de Contas Rejeitada', statusConciliacao: 'Inconsistência (Rito Patológico)' }
+];
+
+export const saveToIndexedDB = async (records: any[]) => {
+  if (typeof window === 'undefined' || typeof (window as any).openDB === 'undefined') return;
+  try {
+    const db: any = await (window as any).openDB('SiactDB');
+    await db.clear('transfers');
+    for (const record of records) {
+      await db.put('transfers', record);
+    }
+    console.log('[AUDIT] Salvo em IndexedDB com sucesso');
+  } catch (err) {
+    console.error('[ERROR] Falha ao salvar no IndexedDB:', err);
+  }
+};
+
 /**
  * Hook para sincronização automática com o Transfere.gov.
  * @param options.onSync - Callback executado ao final de cada sincronização.
@@ -83,6 +153,7 @@ export function useTransferegovSync({
       console.log('[AUDIT] Sincronização concluída');
       onSync?.(response.data);
       persistData(now, response.data, response.total);
+      await saveToIndexedDB(mockTransfers);
     } catch (err) {
       if (!isMountedRef.current) return;
       const msg = err instanceof Error ? err.message : 'Erro desconhecido';
