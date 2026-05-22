@@ -37,3 +37,5 @@ tce_pipeline/planilha/backups/
 tce_pipeline/dashboard_data.json
 tce_pipeline/dashboard.html
 
+# Test coverage
+coverage/
