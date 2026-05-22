@@ -87,7 +87,7 @@ export function useTransferegovSync({
       if (!isMountedRef.current) return;
       const msg = err instanceof Error ? err.message : 'Erro desconhecido';
       setError(msg);
-      console.error('[AUDIT] Erro na sincronização:', msg);
+      console.error('[ERROR] useTransferegovSync:', msg);
       onError?.(msg);
     } finally {
       if (isMountedRef.current) setLoading(false);
