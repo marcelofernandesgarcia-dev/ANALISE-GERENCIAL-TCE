@@ -189,13 +189,13 @@ const NON_ID_HEADER_KEYWORDS = [
   "acao", "ação", "orgao", "órgão", "ugestora",
 ];
 
-// SKILL §2.1: ID must be exactly 6 digits starting with 7, 8, or 9
-// Instruments 700xxx–999xxx are valid Transferegov IDs; codes starting with
-// 1–6 are UG/SIORG/IBGE codes and are excluded by the blacklist mechanism.
+// SKILL §2.1: ID must be exactly 6 digits starting with 5, 6, 7, 8, or 9
+// Instruments 500xxx–999xxx are valid Transferegov/SIAFI IDs; codes starting with
+// 1–4 are UG/SIORG/IBGE codes and are excluded by the blacklist mechanism.
 const extractTransferId = (val: string | number | undefined): string | null => {
   if (!val) return null;
   const str = String(val).trim();
-  const match = str.match(/(?:^|\D)([789]\d{5})(?:\D|$)/);
+  const match = str.match(/(?:^|\D)([56789]\d{5})(?:\D|$)/);
   return match ? match[1] : null;
 };
 
@@ -228,6 +228,10 @@ interface ConciliacaoResult {
   situacaoTg: string;
   situacaoSiafiDisplay: string;
   statusConciliacao: string;
+  situacaoTce?: string;
+  observacaoTce?: string;
+  encaminhamentoTce?: string;
+  emTce?: boolean;
   fullData: { "Status de Conciliação": string; "Motivo do Alerta": string };
 }
 
@@ -271,20 +275,37 @@ class ErrorBoundary extends Component<
 export default function App() {
   const [fileTransferegov, setFileTransferegov] = useState<File | null>(null);
   const [fileSiafi, setFileSiafi] = useState<File | null>(null);
+  const [fileTce, setFileTce] = useState<File | null>(null);
   const [results, setResults] = useState<ConciliacaoResult[]>([]);
   const [isProcessing, setIsProcessing] = useState(false);
   const [stats, setStats] = useState({
     total: 0, corretos: 0, inconsistencias: 0, naoEncontrados: 0, alertas: 0,
+    tceAtiva: 0, cadinInscrito: 0
   });
+  const [tceGlobalStats, setTceGlobalStats] = useState<{
+    totalRows: number;
+    classifiedCount: number;
+    unclassifiedCount: number;
+    hStats: { status: string; count: number; percentage: number }[];
+    dStats: { status: string; count: number; percentage: number }[];
+    dEmptyHStats: { status: string; count: number; percentage: number }[];
+    iStats: { observacao: string; count: number }[];
+    jStats: { encaminhamento: string; count: number }[];
+  } | null>(null);
+  const [tceCardTab, setTceCardTab] = useState<'kpi' | 'situacao' | 'obs' | 'encam'>('kpi');
   const [filterNrInstrumento, setFilterNrInstrumento] = useState('');
   const [filterSituacaoTg, setFilterSituacaoTg] = useState('');
   const [filterContaSiafi, setFilterContaSiafi] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterSituacaoTce, setFilterSituacaoTce] = useState('');
+  const [filterTceText, setFilterTceText] = useState('');
   const [modalOpen, setModalOpen] = useState<'guide' | 'compliance' | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [filterConvenente, setFilterConvenente] = useState('');
   const [currentPage, setCurrentPage] = useState(0);
   const [processingPhase, setProcessingPhase] = useState('');
+
+  const hasTceData = useMemo(() => results.some(r => r.situacaoTce && r.situacaoTce !== "FORA DE TCE / REGULAR"), [results]);
 
   const dashboard = useMemo(() => {
     if (results.length === 0) return null;
@@ -293,6 +314,7 @@ export default function App() {
     const tgFreq: Record<string, Set<string>> = {};
     const uniqueIds = new Set<string>();
     const accUniqueIds: Record<string, Set<string>> = {};
+    const tceFreq: Record<string, Set<string>> = {};
 
     for (const r of results) {
       const st = String(r.situacaoRawTg || "Não informado").trim() || "Não informado";
@@ -306,6 +328,12 @@ export default function App() {
           accUniqueIds[m[1]].add(r.idSiafi);
         }
       }
+
+      if (r.situacaoTce && r.situacaoTce !== "FORA DE TCE / REGULAR") {
+        const tceSt = String(r.situacaoTce).trim();
+        if (!tceFreq[tceSt]) tceFreq[tceSt] = new Set();
+        tceFreq[tceSt].add(r.idSiafi);
+      }
     }
     const accCounts: Record<string, number> = {};
     for (const [code, ids] of Object.entries(accUniqueIds)) {
@@ -316,6 +344,12 @@ export default function App() {
       .map(([k, s]) => [k, s.size] as [string, number])
       .sort((a, b) => b[1] - a[1]).slice(0, 8);
     const tgMax = tgEntries[0]?.[1] || 1;
+
+    const tceEntries: [string, number][] = Object.entries(tceFreq)
+      .map(([k, s]) => [k, s.size] as [string, number])
+      .sort((a, b) => b[1] - a[1]).slice(0, 8);
+    const tceMax = tceEntries[0]?.[1] || 1;
+    const totalTceInstruments = Object.values(tceFreq).reduce((acc, s) => acc + s.size, 0);
 
     const BI_PALETTE = ['#3b82f6','#10b981','#f59e0b','#8b5cf6','#ef4444','#06b6d4','#f97316','#84cc16','#ec4899','#6366f1'];
     const allAccEntries = Object.entries(accCounts)
@@ -335,7 +369,8 @@ export default function App() {
     });
 
     return { tgEntries, tgMax, allSegments, allAccEntries, allAccTotal, accMax,
-             uniqueInstruments: uniqueIds.size, totalEntries: results.length };
+             uniqueInstruments: uniqueIds.size, totalEntries: results.length,
+             tceEntries, tceMax, totalTceInstruments };
   }, [results]);
 
   const uniqueTgSituacoes = useMemo(() => {
@@ -345,6 +380,76 @@ export default function App() {
     }
     return [...set].sort();
   }, [results]);
+
+  const uniqueTceSituacoes = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of results) {
+      if (r.situacaoTce && r.situacaoTce !== "FORA DE TCE / REGULAR") {
+        set.add(r.situacaoTce);
+      }
+    }
+    return [...set].sort();
+  }, [results]);
+
+  const tceResumoSegments = useMemo(() => {
+    if (!tceGlobalStats || tceGlobalStats.totalRows === 0) return [];
+    const total = tceGlobalStats.totalRows;
+    const items = [
+      { label: 'Classificados', val: tceGlobalStats.classifiedCount, color: '#10b981' },
+      { label: 'Não Classificados', val: tceGlobalStats.unclassifiedCount, color: '#f59e0b' }
+    ];
+    const C = 2 * Math.PI * 40; // radius = 40
+    let off = 0;
+    return items.map(d => {
+      const frac = d.val / total;
+      const seg = {
+        ...d,
+        dasharray: `${(frac * C).toFixed(2)} ${C.toFixed(2)}`,
+        dashoffset: -(off * C)
+      };
+      off += frac;
+      return seg;
+    });
+  }, [tceGlobalStats]);
+
+  const tceHStatsSegments = useMemo(() => {
+    if (!tceGlobalStats || !tceGlobalStats.hStats || tceGlobalStats.hStats.length === 0) return [];
+    
+    // Take the top 5, group the rest as "Outros"
+    const topStats = tceGlobalStats.hStats.slice(0, 5);
+    const sumTop = topStats.reduce((sum, item) => sum + item.count, 0);
+    const total = tceGlobalStats.classifiedCount || 1;
+    
+    const statsToUse = [...topStats];
+    if (tceGlobalStats.hStats.length > 5) {
+      const otherCount = total - sumTop;
+      if (otherCount > 0) {
+        statsToUse.push({
+          status: "OUTRAS SITUAÇÕES",
+          count: otherCount,
+          percentage: (otherCount / total) * 100
+        });
+      }
+    }
+    
+    const TCE_PALETTE = ['#f43f5e', '#ec4899', '#fb7185', '#fb923c', '#a855f7', '#6366f1', '#f59e0b'];
+    
+    const C = 2 * Math.PI * 40; // radius = 40
+    let off = 0;
+    return statsToUse.map((d, i) => {
+      const frac = d.count / total;
+      const color = TCE_PALETTE[i % TCE_PALETTE.length];
+      const seg = {
+        ...d,
+        color,
+        dasharray: `${(frac * C).toFixed(2)} ${C.toFixed(2)}`,
+        dashoffset: -(off * C)
+      };
+      off += frac;
+      return seg;
+    });
+  }, [tceGlobalStats]);
+
 
   const uniqueContasSiafi = useMemo(() => {
     const map = new Map<string, string>();
@@ -369,6 +474,7 @@ export default function App() {
   const filteredResults = useMemo(() => {
     const idTrim = filterNrInstrumento.trim();
     const convTrim = filterConvenente.trim().toLowerCase();
+    const tceTextTrim = filterTceText.trim().toLowerCase();
     return results.filter(r => {
       if (idTrim && !String(r.idSiafi ?? '').includes(idTrim)) return false;
       if (filterSituacaoTg && r.situacaoRawTg !== filterSituacaoTg) return false;
@@ -376,9 +482,13 @@ export default function App() {
       if (filterStatus && r.statusConciliacao !== filterStatus) return false;
       if (convTrim && !String(r.convenenteNome ?? '').toLowerCase().includes(convTrim) &&
           !String(r.cnpjSiafi ?? '').includes(filterConvenente.trim())) return false;
+      if (filterSituacaoTce && r.situacaoTce !== filterSituacaoTce) return false;
+      if (tceTextTrim &&
+          !String(r.observacaoTce ?? '').toLowerCase().includes(tceTextTrim) &&
+          !String(r.encaminhamentoTce ?? '').toLowerCase().includes(tceTextTrim)) return false;
       return true;
     });
-  }, [results, filterNrInstrumento, filterSituacaoTg, filterContaSiafi, filterStatus, filterConvenente]);
+  }, [results, filterNrInstrumento, filterSituacaoTg, filterContaSiafi, filterStatus, filterConvenente, filterSituacaoTce, filterTceText]);
 
   const paginatedResults = useMemo(() => {
     const start = currentPage * PAGE_SIZE;
@@ -388,6 +498,7 @@ export default function App() {
   const filteredStats = useMemo(() => {
     const seen = new Set<string>();
     let corretos = 0, inconsistencias = 0, naoEncontrados = 0, alertas = 0;
+    let tceAtiva = 0, cadinInscrito = 0;
     for (const r of filteredResults) {
       if (seen.has(r.idSiafi)) continue;
       seen.add(r.idSiafi);
@@ -395,6 +506,9 @@ export default function App() {
       else if (r.statusConciliacao === 'Inconsistência (Rito Patológico)') inconsistencias++;
       else if (r.statusConciliacao === 'Sem Registro no Transferegov') naoEncontrados++;
       else alertas++;
+
+      if (r.emTce) tceAtiva++;
+      if (r.situacaoTce && r.situacaoTce.toUpperCase().includes("CADIN INSCRITO")) cadinInscrito++;
     }
     const total = seen.size;
     const items = [
@@ -411,14 +525,15 @@ export default function App() {
       off += frac;
       return seg;
     });
-    return { corretos, inconsistencias, naoEncontrados, alertas, total, items, segments };
+    return { corretos, inconsistencias, naoEncontrados, alertas, total, items, segments, tceAtiva, cadinInscrito };
   }, [filteredResults]);
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'transferegov' | 'siafi') => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>, type: 'transferegov' | 'siafi' | 'tce') => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (type === 'transferegov') setFileTransferegov(file);
-    else setFileSiafi(file);
+    else if (type === 'siafi') setFileSiafi(file);
+    else setFileTce(file);
   };
 
   const processFiles = async () => {
@@ -449,9 +564,10 @@ export default function App() {
         });
       };
 
-      const [rowsTg, rowsSiafi] = await Promise.all([
+      const [rowsTg, rowsSiafi, rowsTce] = await Promise.all([
         readExcelMatrix(fileTransferegov),
         readExcelMatrix(fileSiafi),
+        fileTce ? readExcelMatrix(fileTce) : Promise.resolve(null),
       ]);
 
       setProcessingPhase("Processando Transferegov...");
@@ -648,14 +764,14 @@ export default function App() {
         }
       }
 
-      // Blacklist: código 7xxxxx que apareça em >50% das linhas da col A é UG, não instrumento
+      // Blacklist: código de 6 dígitos que apareça em >50% das linhas da col A é UG, não instrumento
       const colAFreq: Record<string, number> = {};
       let colADataRows = 0;
       for (let i = siafiHeaderRowIdx + 1; i < rowsSiafi.length; i++) {
         const r = rowsSiafi[i];
         if (!r || r.length === 0) continue;
         const raw = String(r[0] ?? "").replace(/\D/g, "");
-        if (raw.length === 6 && /[789]/.test(raw[0])) {
+        if (raw.length === 6 && /[56789]/.test(raw[0])) {
           colAFreq[raw] = (colAFreq[raw] || 0) + 1;
           colADataRows++;
         }
@@ -736,6 +852,158 @@ export default function App() {
       }
 
       // Fase 3: Gerar resultados a partir do mapa de instrumentos
+      const tceMap = new Map<string, { situacao: string; observacao: string; encaminhamento: string }>();
+
+      let tceGlobalStatsData = null;
+      if (rowsTce && rowsTce.length > 0) {
+        setProcessingPhase("Processando Planilha TCE...");
+        let idColTceIdx = -1;
+        let situacaoPlataformaColTceIdx = -1;
+        let situacaoColTceIdx = -1;
+        let observacaoColTceIdx = -1;
+        let encaminhamentoColTceIdx = -1;
+
+        // Detect headers from first 10 rows
+        for (let i = 0; i < Math.min(10, rowsTce.length); i++) {
+          const r = rowsTce[i];
+          if (!r) continue;
+          r.forEach((cell, idx) => {
+            const norm = normalizeText(String(cell));
+            if (idColTceIdx === -1 && norm.includes("nº") && (norm.includes("transfer") || norm.includes("convenio"))) {
+              idColTceIdx = idx;
+            }
+            if (situacaoPlataformaColTceIdx === -1 && norm.includes("situacao") && norm.includes("plataforma")) {
+              situacaoPlataformaColTceIdx = idx;
+            }
+            if (situacaoColTceIdx === -1 && norm.includes("situacao atual")) {
+              situacaoColTceIdx = idx;
+            }
+            if (observacaoColTceIdx === -1 && (norm.includes("observacao") || norm.includes("observacoes"))) {
+              observacaoColTceIdx = idx;
+            }
+            if (encaminhamentoColTceIdx === -1 && norm.includes("encaminhamento")) {
+              encaminhamentoColTceIdx = idx;
+            }
+          });
+          if (idColTceIdx !== -1 && situacaoColTceIdx !== -1) break;
+        }
+
+        // Fallbacks baseados na estrutura original
+        if (idColTceIdx === -1) idColTceIdx = 0;
+        if (situacaoPlataformaColTceIdx === -1) situacaoPlataformaColTceIdx = 3;
+        if (situacaoColTceIdx === -1) situacaoColTceIdx = 7;
+        if (observacaoColTceIdx === -1) observacaoColTceIdx = 8;
+        if (encaminhamentoColTceIdx === -1) encaminhamentoColTceIdx = 9;
+
+        // Compute global statistics
+        let totalRows = 0;
+        let classifiedCount = 0;
+        let unclassifiedCount = 0;
+
+        const hFreq: Record<string, number> = {};
+        const dFreq: Record<string, number> = {};
+        const dEmptyHFreq: Record<string, number> = {};
+        const iFreq: Record<string, number> = {};
+        const jFreq: Record<string, number> = {};
+
+        // Loop over data rows, skipping the header (row 0)
+        for (let i = 1; i < rowsTce.length; i++) {
+          const row = rowsTce[i];
+          if (!row || row.length === 0) continue;
+
+          const rawId = row[idColTceIdx];
+          const id = extractTransferId(rawId);
+          if (!id) continue;
+
+          totalRows++;
+
+          const sitPlataforma = situacaoPlataformaColTceIdx !== -1 && row[situacaoPlataformaColTceIdx]
+            ? String(row[situacaoPlataformaColTceIdx]).trim().toUpperCase()
+            : "NÃO INFORMADO";
+          if (sitPlataforma && sitPlataforma !== "NÃO INFORMADO") {
+            dFreq[sitPlataforma] = (dFreq[sitPlataforma] || 0) + 1;
+          }
+
+          const situacao = situacaoColTceIdx !== -1 && row[situacaoColTceIdx]
+            ? String(row[situacaoColTceIdx]).trim().toUpperCase()
+            : "";
+          if (situacao && situacao !== "NÃO INFORMADO") {
+            classifiedCount++;
+            hFreq[situacao] = (hFreq[situacao] || 0) + 1;
+          } else {
+            unclassifiedCount++;
+            if (sitPlataforma) {
+              dEmptyHFreq[sitPlataforma] = (dEmptyHFreq[sitPlataforma] || 0) + 1;
+            }
+          }
+
+          const observacao = observacaoColTceIdx !== -1 && row[observacaoColTceIdx]
+            ? String(row[observacaoColTceIdx]).trim().toUpperCase()
+            : "";
+          if (observacao && observacao !== "SEM OBSERVAÇÃO" && observacao !== "NÃO HÁ") {
+            iFreq[observacao] = (iFreq[observacao] || 0) + 1;
+          }
+
+          const encaminhamento = encaminhamentoColTceIdx !== -1 && row[encaminhamentoColTceIdx]
+            ? String(row[encaminhamentoColTceIdx]).trim().toUpperCase()
+            : "";
+          if (encaminhamento && encaminhamento !== "SEM ENCAMINHAMENTO" && encaminhamento !== "NÃO HÁ") {
+            jFreq[encaminhamento] = (jFreq[encaminhamento] || 0) + 1;
+          }
+
+          if (situacao || observacao || encaminhamento) {
+            tceMap.set(id, { situacao, observacao, encaminhamento });
+          }
+        }
+
+        const hStats = Object.entries(hFreq)
+          .map(([status, count]) => ({
+            status,
+            count,
+            percentage: totalRows > 0 ? (count / totalRows) * 100 : 0
+          }))
+          .sort((a, b) => b.count - a.count);
+
+        const dStats = Object.entries(dFreq)
+          .map(([status, count]) => ({
+            status,
+            count,
+            percentage: totalRows > 0 ? (count / totalRows) * 100 : 0
+          }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 10);
+
+        const dEmptyHStats = Object.entries(dEmptyHFreq)
+          .map(([status, count]) => ({
+            status,
+            count,
+            percentage: unclassifiedCount > 0 ? (count / unclassifiedCount) * 100 : 0
+          }))
+          .sort((a, b) => b.count - a.count);
+
+        const iStats = Object.entries(iFreq)
+          .map(([observacao, count]) => ({ observacao, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 15);
+
+        const jStats = Object.entries(jFreq)
+          .map(([encaminhamento, count]) => ({ encaminhamento, count }))
+          .sort((a, b) => b.count - a.count)
+          .slice(0, 15);
+
+        tceGlobalStatsData = {
+          totalRows,
+          classifiedCount,
+          unclassifiedCount,
+          hStats,
+          dStats,
+          dEmptyHStats,
+          iStats,
+          jStats
+        };
+      }
+
+      setProcessingPhase("Conciliando Bases...");
       let corretos = 0, inconsistencias = 0, naoEncontrados = 0, alertas = 0;
       const confirmedCorrectIds = new Set<string>();
       const finalResults: ConciliacaoResult[] = [];
@@ -949,6 +1217,15 @@ export default function App() {
           motivo = "Desconhecido";
         }
 
+        const tceInfo = tceMap.get(idSiafi);
+        const situacaoTce = tceInfo?.situacao || "FORA DE TCE / REGULAR";
+        const observacaoTce = tceInfo?.observacao || "";
+        const encaminhamentoTce = tceInfo?.encaminhamento || "";
+
+        const tceStNorm = normalizeText(situacaoTce);
+        const nonActiveTceStates = ["concluido", "cadin baixado", "cancelamento", "tcu reconheceu prescricao", "cv anulado", "fora de tce / regular", "fora de tce", "regular"];
+        const emTce = tceInfo ? !nonActiveTceStates.some(state => tceStNorm.includes(state)) : false;
+
         finalResults.push({
           idSiafi,
           valorSiafi,
@@ -959,11 +1236,23 @@ export default function App() {
           situacaoTg,
           situacaoSiafiDisplay,
           statusConciliacao,
+          situacaoTce,
+          observacaoTce,
+          encaminhamentoTce,
+          emTce,
           fullData: { "Status de Conciliação": statusConciliacao, "Motivo do Alerta": motivo },
         });
       }
 
-      setStats({ total: finalResults.length, corretos, inconsistencias, naoEncontrados, alertas });
+      let tceAtiva = 0;
+      let cadinInscrito = 0;
+      for (const r of finalResults) {
+        if (r.emTce) tceAtiva++;
+        if (r.situacaoTce && r.situacaoTce.toUpperCase().includes("CADIN INSCRITO")) cadinInscrito++;
+      }
+
+      setStats({ total: finalResults.length, corretos, inconsistencias, naoEncontrados, alertas, tceAtiva, cadinInscrito });
+      setTceGlobalStats(tceGlobalStatsData);
       setResults(finalResults);
       setCurrentPage(0);
       setProcessingPhase("");
@@ -980,16 +1269,24 @@ export default function App() {
   // A: ID  B: Convenente  C: CNPJ  D: Valor (R$)  E: Situação Transferegov
   // F: Situação SIAFI  G: Status  H: Motivo do Alerta
   const exportResults = () => {
-    const dataToExport = filteredResults.map(r => ({
-      "ID": r.idSiafi,
-      "Convenente": r.convenenteSiafi || r.convenenteNome || "",
-      "CNPJ": r.cnpjSiafi || "",
-      "Valor (R$)": r.valorSiafi || "",
-      "Situação Transferegov": r.situacaoRawTg,
-      "Situação SIAFI": r.situacaoSiafiDisplay,
-      "Status (Conciliação)": r.statusConciliacao,
-      "Motivo do Alerta": r.fullData["Motivo do Alerta"],
-    }));
+    const dataToExport = filteredResults.map(r => {
+      const rowData: any = {
+        "ID": r.idSiafi,
+        "Convenente": r.convenenteSiafi || r.convenenteNome || "",
+        "CNPJ": r.cnpjSiafi || "",
+        "Valor (R$)": r.valorSiafi || "",
+        "Situação Transferegov": r.situacaoRawTg,
+        "Situação SIAFI": r.situacaoSiafiDisplay,
+        "Status (Conciliação)": r.statusConciliacao,
+        "Motivo do Alerta": r.fullData["Motivo do Alerta"],
+      };
+      if (hasTceData) {
+        rowData["TCE - Situação Atual"] = r.situacaoTce || "";
+        rowData["TCE - Observações"] = r.observacaoTce || "";
+        rowData["TCE - Encaminhamento Necessário"] = r.encaminhamentoTce || "";
+      }
+      return rowData;
+    });
     const ws = XLSX.utils.json_to_sheet(dataToExport);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, "Conciliação");
@@ -1019,6 +1316,20 @@ export default function App() {
          'Atenção — Aprovação sem encerramento no SIAFI',
          'Revisão Manual — Sem Rastreabilidade de Evento'].includes(status)) return <AlertCircle size={14} style={style} />;
     return <XCircle size={14} style={style} />;
+  };
+
+  const getTceBadge = (row: ConciliacaoResult) => {
+    if (!hasTceData || !row.situacaoTce || row.situacaoTce === "FORA DE TCE / REGULAR") {
+      return null;
+    }
+    const norm = normalizeText(row.situacaoTce);
+    if (norm.includes("concluido") || norm.includes("baixado") || norm.includes("prescricao") || norm.includes("regular")) {
+      return <span title={`TCE Resolvida: ${row.situacaoTce}`} style={{ marginRight: '6px', cursor: 'default' }}>🟢</span>;
+    }
+    if (row.emTce) {
+      return <span title={`TCE Ativa: ${row.situacaoTce}`} style={{ marginRight: '6px', cursor: 'default' }}>🔴</span>;
+    }
+    return <span title={`TCE Pendência: ${row.situacaoTce}`} style={{ marginRight: '6px', cursor: 'default' }}>🟡</span>;
   };
 
   return (
@@ -1079,6 +1390,18 @@ export default function App() {
           <h3>Planilha SIAFI (Alvo)</h3>
           <p>{fileSiafi ? fileSiafi.name : "Clique ou arraste para selecionar"}</p>
         </div>
+
+        <div className={`upload-card ${fileTce ? 'loaded' : ''}`}>
+          <input
+            type="file"
+            className="file-input"
+            accept=".xlsx, .xls, .csv"
+            onChange={(e) => handleFileUpload(e, 'tce')}
+          />
+          <UploadCloud className="upload-icon" />
+          <h3>Planilha TCE (Complemento Opcional)</h3>
+          <p>{fileTce ? fileTce.name : "Clique ou arraste para selecionar"}</p>
+        </div>
       </div>
 
       <button
@@ -1098,7 +1421,7 @@ export default function App() {
       )}
 
       {dashboard && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '1.25rem', margin: '1.5rem 0 0.5rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1.25rem', margin: '1.5rem 0 0.5rem' }}>
 
           {/* ── Card 1: Transferegov — barras horizontais por status ── */}
           <div className="stat-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
@@ -1201,7 +1524,7 @@ export default function App() {
                 <TrendingUp size={16} color="#34d399" />
                 <span style={{ fontWeight: 700, fontSize: '0.82rem', color: DASH.cardText }}>Resultado da Auditoria</span>
               </div>
-              {(filterNrInstrumento || filterSituacaoTg || filterContaSiafi || filterStatus || filterConvenente) && (
+              {(filterNrInstrumento || filterSituacaoTg || filterContaSiafi || filterStatus || filterConvenente || filterSituacaoTce || filterTceText) && (
                 <span style={{ fontSize: '0.63rem', fontWeight: 700, color: '#60a5fa', background: 'rgba(96,165,250,0.15)', border: '1px solid rgba(96,165,250,0.3)', borderRadius: 99, padding: '2px 8px' }}>
                   Filtrado
                 </span>
@@ -1254,6 +1577,231 @@ export default function App() {
               ))}
             </div>
           </div>
+
+          {/* ── Card 4: Análise Gerencial TCE ── */}
+          {hasTceData && (
+            <div className="stat-card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
+                <ShieldCheck size={16} color="#fb7185" />
+                <span style={{ fontWeight: 700, fontSize: '0.82rem', color: DASH.cardText }}>
+                  Análise Gerencial TCE
+                </span>
+              </div>
+
+              {/* Sub-abas interativas para organizar as métricas */}
+              <div style={{ display: 'flex', gap: '0.35rem', width: '100%', marginBottom: '0.8rem', borderBottom: '1px solid rgba(255,255,255,0.06)', paddingBottom: '0.4rem', overflowX: 'auto', whiteSpace: 'nowrap' }}>
+                {[
+                  { id: 'kpi', label: 'Resumo' },
+                  { id: 'situacao', label: 'Situações (Col. H)' },
+                  { id: 'obs', label: 'Observações (Col. I)' },
+                  { id: 'encam', label: 'Encaminhamentos (Col. J)' },
+                ].map(t => (
+                  <button
+                    key={t.id}
+                    onClick={() => setTceCardTab(t.id as any)}
+                    style={{
+                      background: tceCardTab === t.id ? 'rgba(251,113,133,0.15)' : 'transparent',
+                      color: tceCardTab === t.id ? '#fb7185' : DASH.cardMuted,
+                      border: 'none',
+                      borderRadius: 6,
+                      padding: '0.3rem 0.5rem',
+                      fontSize: '0.68rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {t.label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Conteúdo das Sub-abas */}
+              {tceCardTab === 'kpi' && (
+                <div style={{ width: '100%' }}>
+                  {/* Reconciled Active/CADIN Stats */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: '0.4rem', width: '100%', marginBottom: '0.75rem' }}>
+                    {[
+                      { label: 'TCE Ativa Conciliada', val: filteredStats.tceAtiva },
+                      { label: 'CADIN Reconciliado', val: filteredStats.cadinInscrito },
+                    ].map(k => (
+                      <div key={k.label} style={{ background: DASH.chipBg, borderRadius: 8, padding: '0.5rem 0.4rem', textAlign: 'center', border: '1px solid rgba(255,255,255,0.06)' }}>
+                        <div style={{ fontSize: '1.15rem', fontWeight: 800, color: '#fb7185', lineHeight: 1.1 }}>{k.val}</div>
+                        <div style={{ fontSize: '0.6rem', color: DASH.cardSubtle, marginTop: 3, textTransform: 'uppercase', letterSpacing: '0.04em' }}>{k.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Global TCE File Stats */}
+                  {tceGlobalStats ? (
+                    <div style={{ width: '100%', marginTop: '0.5rem' }}>
+                      {/* Donut Chart */}
+                      <div style={{ display: 'flex', justifyContent: 'center', width: '100%', marginBottom: '0.7rem' }}>
+                        <svg width="118" height="118" viewBox="0 0 110 110">
+                          {tceResumoSegments.length > 0
+                            ? tceResumoSegments.map((seg, i) => (
+                                <circle key={i} cx="55" cy="55" r="40"
+                                  fill="none" stroke={seg.color} strokeWidth="15"
+                                  strokeDasharray={seg.dasharray}
+                                  strokeDashoffset={seg.dashoffset}
+                                  transform="rotate(-90 55 55)"
+                                />
+                              ))
+                            : <circle cx="55" cy="55" r="40" fill="none" stroke={DASH.barTrack} strokeWidth="15" />
+                          }
+                          <text x="55" y="52" textAnchor="middle" fontSize="14" fontWeight="800" fill={DASH.cardText}>
+                            {tceGlobalStats.totalRows}
+                          </text>
+                          <text x="55" y="65" textAnchor="middle" fontSize="8" fill={DASH.cardSubtle}>registros</text>
+                        </svg>
+                      </div>
+
+                      {/* Legend and Bars */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.42rem', width: '100%' }}>
+                        {tceResumoSegments.map(seg => {
+                          const pct = ((seg.val / tceGlobalStats.totalRows) * 100).toFixed(1);
+                          return (
+                            <div key={seg.label}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: 3, alignItems: 'center' }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: DASH.cardMuted, maxWidth: '72%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: seg.color, display: 'inline-block', flexShrink: 0 }} />
+                                  {seg.label}
+                                </span>
+                                <span style={{ fontWeight: 800, color: DASH.cardText, flexShrink: 0, fontSize: '0.72rem' }}>
+                                  {seg.val} <span style={{ fontWeight: 400, color: DASH.cardSubtle }}>({pct}%)</span>
+                                </span>
+                              </div>
+                              <div style={{ background: DASH.barTrack, borderRadius: 4, height: 7 }}>
+                                <div style={{ width: `${pct}%`, background: seg.color, height: 7, borderRadius: 4 }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: 'center', color: DASH.cardSubtle, fontSize: '0.78rem', padding: '0.5rem 0' }}>
+                      Nenhum arquivo TCE processado
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {tceCardTab === 'situacao' && (
+                <div style={{ width: '100%' }}>
+                  {tceGlobalStats && tceHStatsSegments.length > 0 ? (
+                    <div style={{ width: '100%' }}>
+                      {/* Donut Chart */}
+                      <div style={{ display: 'flex', justifyContent: 'center', width: '100%', marginBottom: '0.7rem' }}>
+                        <svg width="118" height="118" viewBox="0 0 110 110">
+                          {tceHStatsSegments.length > 0
+                            ? tceHStatsSegments.map((seg, i) => (
+                                <circle key={i} cx="55" cy="55" r="40"
+                                  fill="none" stroke={seg.color} strokeWidth="15"
+                                  strokeDasharray={seg.dasharray}
+                                  strokeDashoffset={seg.dashoffset}
+                                  transform="rotate(-90 55 55)"
+                                />
+                              ))
+                            : <circle cx="55" cy="55" r="40" fill="none" stroke={DASH.barTrack} strokeWidth="15" />
+                          }
+                          <text x="55" y="52" textAnchor="middle" fontSize="14" fontWeight="800" fill={DASH.cardText}>
+                            {tceGlobalStats.classifiedCount}
+                          </text>
+                          <text x="55" y="65" textAnchor="middle" fontSize="8" fill={DASH.cardSubtle}>TCEs ativas</text>
+                        </svg>
+                      </div>
+
+                      {/* Legend and Bars */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.42rem', width: '100%', overflowY: 'auto', maxHeight: '140px', paddingRight: '4px' }}>
+                        {tceHStatsSegments.map(seg => {
+                          const pct = seg.percentage.toFixed(1);
+                          return (
+                            <div key={seg.status}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: 3, alignItems: 'center' }}>
+                                <span style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', color: DASH.cardMuted, maxWidth: '72%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={seg.status}>
+                                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: seg.color, display: 'inline-block', flexShrink: 0 }} />
+                                  {seg.status}
+                                </span>
+                                <span style={{ fontWeight: 800, color: DASH.cardText, flexShrink: 0, fontSize: '0.72rem' }}>
+                                  {seg.count} <span style={{ fontWeight: 400, color: DASH.cardSubtle }}>({pct}%)</span>
+                                </span>
+                              </div>
+                              <div style={{ background: DASH.barTrack, borderRadius: 4, height: 7 }}>
+                                <div style={{ width: `${pct}%`, background: seg.color, height: 7, borderRadius: 4 }} />
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: 'center', color: DASH.cardSubtle, fontSize: '0.78rem', padding: '1rem 0' }}>
+                      Nenhuma classificação ativa encontrada
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {tceCardTab === 'obs' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', width: '100%', overflowY: 'auto', maxHeight: '180px', paddingRight: '4px' }}>
+                  {tceGlobalStats && tceGlobalStats.iStats.length > 0 ? (
+                    tceGlobalStats.iStats.slice(0, 8).map(d => {
+                      const maxCount = tceGlobalStats.iStats[0]?.count || 1;
+                      return (
+                        <div key={d.observacao} style={{ width: '100%' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: 3, alignItems: 'center' }}>
+                            <span style={{ maxWidth: '82%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: DASH.cardMuted }} title={d.observacao}>
+                              {d.observacao || '—'}
+                            </span>
+                            <span style={{ fontWeight: 800, color: '#fb7185', fontSize: '0.78rem', background: 'rgba(251,113,133,0.15)', padding: '1px 7px', borderRadius: 99, flexShrink: 0 }}>
+                              {d.count}
+                            </span>
+                          </div>
+                          <div style={{ background: DASH.barTrack, borderRadius: 4, height: 7 }}>
+                            <div style={{ width: `${Math.round((d.count / maxCount) * 100)}%`, background: 'linear-gradient(90deg,#3b82f6,#60a5fa)', height: 7, borderRadius: 4 }} />
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div style={{ textAlign: 'center', color: DASH.cardSubtle, fontSize: '0.78rem', padding: '1rem 0' }}>
+                      Nenhuma observação encontrada
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {tceCardTab === 'encam' && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', width: '100%', overflowY: 'auto', maxHeight: '180px', paddingRight: '4px' }}>
+                  {tceGlobalStats && tceGlobalStats.jStats.length > 0 ? (
+                    tceGlobalStats.jStats.slice(0, 8).map(d => {
+                      const maxCount = tceGlobalStats.jStats[0]?.count || 1;
+                      return (
+                        <div key={d.encaminhamento} style={{ width: '100%' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', marginBottom: 3, alignItems: 'center' }}>
+                            <span style={{ maxWidth: '82%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: DASH.cardMuted }} title={d.encaminhamento}>
+                              {d.encaminhamento || '—'}
+                            </span>
+                            <span style={{ fontWeight: 800, color: '#fb7185', fontSize: '0.78rem', background: 'rgba(251,113,133,0.15)', padding: '1px 7px', borderRadius: 99, flexShrink: 0 }}>
+                              {d.count}
+                            </span>
+                          </div>
+                          <div style={{ background: DASH.barTrack, borderRadius: 4, height: 7 }}>
+                            <div style={{ width: `${Math.round((d.count / maxCount) * 100)}%`, background: 'linear-gradient(90deg,#8b5cf6,#a78bfa)', height: 7, borderRadius: 4 }} />
+                          </div>
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div style={{ textAlign: 'center', color: DASH.cardSubtle, fontSize: '0.78rem', padding: '1rem 0' }}>
+                      Nenhum encaminhamento encontrado
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
         </div>
       )}
@@ -1322,9 +1870,39 @@ export default function App() {
               <option value="Inconsistência — Inadimplência na fase A Aprovar">Inadimplência na fase A Aprovar (812210103)</option>
               <option value="Revisão Manual — Sem Rastreabilidade de Evento">Sem Rastreabilidade de Evento (812210103)</option>
             </select>
-            {(filterNrInstrumento || filterSituacaoTg || filterContaSiafi || filterStatus || filterConvenente) && (
+            {hasTceData && (
+              <>
+                <select
+                  value={filterSituacaoTce}
+                  onChange={e => { setFilterSituacaoTce(e.target.value); setCurrentPage(0); }}
+                  style={{ flex: '1 1 190px', minWidth: 170, padding: '0.45rem 0.75rem', border: '1px solid #334155', borderRadius: 8, fontSize: '0.82rem', background: '#1e293b', color: '#f1f5f9', outline: 'none' }}
+                >
+                  <option value="">Todas as Situações (TCE)</option>
+                  {uniqueTceSituacoes.map(s => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+                <input
+                  type="text"
+                  placeholder="Pesquisar Obs/Encam. TCE"
+                  value={filterTceText}
+                  onChange={e => { setFilterTceText(e.target.value); setCurrentPage(0); }}
+                  style={{ flex: '1 1 180px', minWidth: 150, padding: '0.45rem 0.75rem', border: '1px solid #334155', borderRadius: 8, fontSize: '0.82rem', outline: 'none', background: '#1e293b', color: '#f1f5f9' }}
+                />
+              </>
+            )}
+            {(filterNrInstrumento || filterSituacaoTg || filterContaSiafi || filterStatus || filterConvenente || filterSituacaoTce || filterTceText) && (
               <button
-                onClick={() => { setFilterNrInstrumento(''); setFilterSituacaoTg(''); setFilterContaSiafi(''); setFilterStatus(''); setFilterConvenente(''); setCurrentPage(0); }}
+                onClick={() => {
+                  setFilterNrInstrumento('');
+                  setFilterConvenente('');
+                  setFilterSituacaoTg('');
+                  setFilterContaSiafi('');
+                  setFilterStatus('');
+                  setFilterSituacaoTce('');
+                  setFilterTceText('');
+                  setCurrentPage(0);
+                }}
                 style={{ padding: '0.45rem 0.9rem', border: '1px solid #334155', borderRadius: 8, fontSize: '0.82rem', background: '#1e293b', cursor: 'pointer', color: '#94a3b8' }}
               >
                 Limpar filtros
@@ -1372,6 +1950,8 @@ export default function App() {
                   <th>Situação SIAFI</th>
                   <th>Status Conciliação</th>
                   <th>Motivo</th>
+                  {hasTceData && <th>Situação TCE</th>}
+                  {hasTceData && <th>Encaminhamento TCE</th>}
                 </tr>
               </thead>
               <tbody>
@@ -1379,7 +1959,12 @@ export default function App() {
                   const motivo = row.fullData["Motivo do Alerta"] || '—';
                   return (
                     <tr key={row.idSiafi}>
-                      <td>{row.idSiafi}</td>
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          {getTceBadge(row)}
+                          <span>{row.idSiafi}</span>
+                        </div>
+                      </td>
                       <td title={row.convenenteSiafi || row.convenenteNome}>
                         {(() => { const c = String(row.convenenteSiafi || row.convenenteNome || ''); return c.length > 24 ? c.substring(0, 24) + '…' : c || '—'; })()}
                       </td>
@@ -1398,6 +1983,16 @@ export default function App() {
                       <td title={motivo} style={{ color: 'var(--text-muted)', fontSize: '0.82rem', maxWidth: 220 }}>
                         {motivo.length > 55 ? motivo.substring(0, 55) + '…' : motivo}
                       </td>
+                      {hasTceData && (
+                        <td title={row.situacaoTce} style={{ fontSize: '0.82rem', whiteSpace: 'nowrap' }}>
+                          {row.situacaoTce || '—'}
+                        </td>
+                      )}
+                      {hasTceData && (
+                        <td title={row.encaminhamentoTce} style={{ fontSize: '0.82rem', maxWidth: 200, color: 'var(--text-muted)' }}>
+                          {row.encaminhamentoTce ? (row.encaminhamentoTce.length > 45 ? row.encaminhamentoTce.substring(0, 45) + '…' : row.encaminhamentoTce) : '—'}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}

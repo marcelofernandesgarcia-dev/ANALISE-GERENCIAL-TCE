@@ -5,12 +5,17 @@ Este script realiza a limpeza das colunas H, I e J das planilhas,
 processa as estatísticas e compila o dashboard interativo.
 """
 
+import sys
+import io
+sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+
 import os
 import re
 import shutil
 import json
 import openpyxl
 from collections import Counter
+
 
 # Configurações de caminhos
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
