@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel de Controle - Transferegov</title>
+    
+    <!-- Google Fonts: Inter & Outfit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- FontAwesome for Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
+
+    <style>
+        :root {
+            --bg-color: #0b0f19;
+            --panel-bg: rgba(20, 28, 47, 0.6);
+            --card-bg: #131b2e;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: rgba(148, 163, 184, 0.1);
+            
+            --primary: #3b82f6;
+            --primary-glow: rgba(59, 130, 246, 0.15);
+            --secondary: #8b5cf6;
+            --accent: #06b6d4;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            background-image: 
+                radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.1) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(139, 92, 246, 0.08) 0px, transparent 50%);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 2rem;
+            overflow-x: hidden;
+        }
+
+        header {
+            margin-bottom: 2.5rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1.5rem;
+        }
+
+        h1 {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #fff 30%, #a5b4fc 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+            margin-top: 0.25rem;
+        }
+
+        /* KPI Cards Grid */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .kpi-card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.75rem;
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .kpi-card:hover {
+            transform: translateY(-5px);
+            border-color: rgba(59, 130, 246, 0.3);
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(59, 130, 246, 0.1);
+        }
+
+        .kpi-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, var(--primary), var(--secondary));
+        }
+
+        .kpi-card.kpi-total::before { background: linear-gradient(90deg, #3b82f6, #06b6d4); }
+        .kpi-card.kpi-filled::before { background: linear-gradient(90deg, #8b5cf6, #ec4899); }
+        .kpi-card.kpi-empty::before { background: linear-gradient(90deg, #f59e0b, #ef4444); }
+
+        .kpi-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .kpi-title {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .kpi-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.25rem;
+            background: rgba(255, 255, 255, 0.03);
+            color: var(--text-muted);
+        }
+
+        .kpi-card.kpi-total .kpi-icon { color: #06b6d4; background: rgba(6, 182, 212, 0.1); }
+        .kpi-card.kpi-filled .kpi-icon { color: #a78bfa; background: rgba(139, 92, 246, 0.1); }
+        .kpi-card.kpi-empty .kpi-icon { color: #f59e0b; background: rgba(245, 158, 11, 0.1); }
+
+        .kpi-value {
+            font-family: 'Outfit', sans-serif;
+            font-size: 2.25rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            color: var(--text-main);
+        }
+
+        .kpi-desc {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .kpi-desc .pct-badge {
+            padding: 2px 8px;
+            border-radius: 12px;
+            font-weight: 600;
+            font-size: 0.75rem;
+        }
+
+        .kpi-filled .pct-badge { background: rgba(16, 185, 129, 0.15); color: #10b981; }
+        .kpi-empty .pct-badge { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
+
+        /* Main Dashboard Grid */
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(12, 1fr);
+            gap: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+
+        .card {
+            background: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 16px;
+            padding: 1.5rem;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        .col-6 { grid-column: span 6; }
+        .col-12 { grid-column: span 12; }
+
+        @media (max-width: 1024px) {
+            .col-6 { grid-column: span 12; }
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+            padding-bottom: 0.75rem;
+        }
+
+        .card-title {
+            font-family: 'Outfit', sans-serif;
+            font-size: 1.15rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: var(--text-main);
+        }
+
+        .card-title i {
+            color: var(--primary);
+        }
+
+        .chart-container {
+            position: relative;
+            width: 100%;
+            min-height: 320px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* Table & Lists CSS */
+        .data-table-container {
+            max-height: 380px;
+            overflow-y: auto;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            text-align: left;
+            font-size: 0.875rem;
+        }
+
+        th {
+            background: rgba(255, 255, 255, 0.02);
+            color: var(--text-muted);
+            padding: 0.75rem 1rem;
+            font-weight: 600;
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        td {
+            padding: 0.75rem 1rem;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-main);
+        }
+
+        tr:last-child td {
+            border-bottom: none;
+        }
+
+        tr:hover td {
+            background: rgba(255, 255, 255, 0.01);
+        }
+
+        .badge-count {
+            background: rgba(59, 130, 246, 0.15);
+            color: #60a5fa;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 0.75rem;
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(255, 255, 255, 0.01);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.08);
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+    </style>
+</head>
+<body>
+
+    <header>
+        <div>
+            <h1><i class="fa-solid fa-chart-line"></i> Painel de Controle - Transferegov</h1>
+            <p class="subtitle">Análise e Monitoramento dos Convênios MTUR (2008 a 2023)</p>
+        </div>
+        <div class="subtitle" style="font-size: 0.85rem; text-align: right;">
+            <i class="fa-regular fa-calendar-check"></i> Dados Padronizados e Atualizados
+        </div>
+    </header>
+
+    <!-- KPI Grid -->
+    <section class="kpi-grid">
+        <div class="kpi-card kpi-total">
+            <div class="kpi-header">
+                <span class="kpi-title">Total de Transferências (Col. A)</span>
+                <div class="kpi-icon"><i class="fa-solid fa-file-invoice-dollar"></i></div>
+            </div>
+            <div id="kpi-total-val" class="kpi-value">0</div>
+            <div class="kpi-desc" style="margin-bottom: 0.75rem;">Registros de convênios na planilha</div>
+            <div style="margin-top: 0.75rem; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 0.75rem;">
+                <div style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Principais Situações Gerais (Col. D)</span>
+                </div>
+                <div id="kpi-total-details" style="display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.78rem;">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </div>
+        <div class="kpi-card kpi-filled">
+            <div class="kpi-header">
+                <span class="kpi-title">Status Classificados (Col. H)</span>
+                <div class="kpi-icon"><i class="fa-solid fa-clipboard-check"></i></div>
+            </div>
+            <div id="kpi-filled-val" class="kpi-value">0</div>
+            <div class="kpi-desc" style="margin-bottom: 0.75rem;">
+                <span id="kpi-filled-pct" class="pct-badge">0.00%</span>
+                dos convênios totais
+            </div>
+            <div style="margin-top: 0.75rem; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 0.75rem;">
+                <div style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Principais Classificações (Col. H)</span>
+                </div>
+                <div id="kpi-filled-details" style="display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.78rem;">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </div>
+        <div class="kpi-card kpi-empty">
+            <div class="kpi-header">
+                <span class="kpi-title">Não Classificados / Vazios</span>
+                <div class="kpi-icon"><i class="fa-solid fa-clock"></i></div>
+            </div>
+            <div id="kpi-empty-val" class="kpi-value">0</div>
+            <div class="kpi-desc" style="margin-bottom: 0.75rem;">
+                <span id="kpi-empty-pct" class="pct-badge">0.00%</span>
+                aguardando preenchimento
+            </div>
+            <div style="margin-top: 0.75rem; border-top: 1px solid rgba(255, 255, 255, 0.05); padding-top: 0.75rem;">
+                <div style="font-size: 0.72rem; color: var(--text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+                    <span>Composição por Situação (Col. D)</span>
+                </div>
+                <div id="kpi-empty-details" style="display: flex; flex-direction: column; gap: 0.4rem; font-size: 0.78rem;">
+                    <!-- Populated by JS -->
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- Charts Layout Grid -->
+    <main class="dashboard-grid">
+        
+        <!-- Column D Stats -->
+        <div class="card col-6">
+            <div class="card-header">
+                <span class="card-title"><i class="fa-solid fa-building-columns"></i> Situação na Plataforma Transferegov (Coluna D)</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="chartColumnD"></canvas>
+            </div>
+        </div>
+
+        <!-- Column H Stats -->
+        <div class="card col-6">
+            <div class="card-header">
+                <span class="card-title"><i class="fa-solid fa-chart-pie"></i> Representatividade por Situação Atual (Coluna H)</span>
+            </div>
+            <div class="chart-container">
+                <canvas id="chartColumnH"></canvas>
+            </div>
+        </div>
+
+        <!-- Column I & J Stats Combined -->
+        <div class="card col-12">
+            <div class="card-header">
+                <span class="card-title"><i class="fa-solid fa-chart-bar"></i> Distribuição de Observações (Col. I) e Encaminhamentos (Col. J)</span>
+            </div>
+            <div class="chart-container" style="min-height: 450px;">
+                <canvas id="chartColumnIeJ"></canvas>
+            </div>
+        </div>
+
+        <!-- Details Table Row -->
+        <div class="card col-12">
+            <div class="card-header">
+                <span class="card-title"><i class="fa-solid fa-table"></i> Detalhamento das Observações (Col. I) e Encaminhamentos (Col. J)</span>
+            </div>
+            <div style="display: flex; gap: 1.5rem; flex-wrap: wrap;">
+                <div class="data-table-container" style="flex: 1; min-width: 300px; max-height: 350px;">
+                    <div style="background: rgba(6, 182, 212, 0.05); padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color);">
+                        <h3 style="font-size: 0.95rem; color: #06b6d4; font-family: 'Outfit', sans-serif;"><i class="fa-solid fa-align-left"></i> Observações Frequentes (Coluna I)</h3>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Observação</th>
+                                <th style="width: 80px; text-align: center;">Qtd</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-observations">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+                <div class="data-table-container" style="flex: 1; min-width: 300px; max-height: 350px;">
+                    <div style="background: rgba(139, 92, 246, 0.05); padding: 0.75rem 1rem; border-bottom: 1px solid var(--border-color);">
+                        <h3 style="font-size: 0.95rem; color: #a78bfa; font-family: 'Outfit', sans-serif;"><i class="fa-solid fa-list-check"></i> Encaminhamentos Frequentes (Coluna J)</h3>
+                    </div>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Encaminhamento</th>
+                                <th style="width: 80px; text-align: center;">Qtd</th>
+                            </tr>
+                        </thead>
+                        <tbody id="table-actions">
+                            <!-- Populated by JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+    </main>
+
+    <!-- Inject data into JavaScript -->
+    <script>
+        // The data will be injected here
+        const rawData = {"total_a": 20509, "total_h_filled": 2007, "total_h_empty": 18502, "h_stats": [{"status": "TCE INSTAURADA", "count": 472, "percentage": 23.52}, {"status": "CV DA CULTURA", "count": 410, "percentage": 20.43}, {"status": "CONCLUÍDO", "count": 364, "percentage": 18.14}, {"status": "EM TCE", "count": 219, "percentage": 10.91}, {"status": "CADIN INSCRITO", "count": 200, "percentage": 9.97}, {"status": "VERIFICAR PROCESSO FÍSICO", "count": 138, "percentage": 6.88}, {"status": "AGUARDANDO PRAZO", "count": 44, "percentage": 2.19}, {"status": "PC TÉCNICA", "count": 40, "percentage": 1.99}, {"status": "INSCREVER CADIN", "count": 40, "percentage": 1.99}, {"status": "EM EXECUÇÃO", "count": 22, "percentage": 1.1}, {"status": "INSTAURAR TCE", "count": 18, "percentage": 0.9}, {"status": "RECURSO ADMINISTRATIVO", "count": 14, "percentage": 0.7}, {"status": "PC FINANCEIRA", "count": 7, "percentage": 0.35}, {"status": "RECURSO", "count": 5, "percentage": 0.25}, {"status": "EM PARCELAMENTO", "count": 4, "percentage": 0.2}, {"status": "TCU RECONHECEU PRESCRIÇÃO", "count": 3, "percentage": 0.15}, {"status": "CADIN BAIXADO", "count": 3, "percentage": 0.15}, {"status": "CANCELAMENTO", "count": 2, "percentage": 0.1}, {"status": "CV ANULADO", "count": 1, "percentage": 0.05}, {"status": "DILIGENCIADA", "count": 1, "percentage": 0.05}], "d_stats": [{"status_plataforma": "Prestação de Contas Concluída", "count": 6287, "percentage": 30.65}, {"status_plataforma": "Prestação de Contas Aprovada", "count": 5125, "percentage": 24.99}, {"status_plataforma": "Convênio Anulado", "count": 3161, "percentage": 15.41}, {"status_plataforma": "Em execução", "count": 1797, "percentage": 8.76}, {"status_plataforma": "Prestação de Contas em Análise", "count": 1287, "percentage": 6.28}, {"status_plataforma": "Prestação de Contas Aprovada com Ressalvas", "count": 1052, "percentage": 5.13}, {"status_plataforma": "Prestação de Contas Rejeitada", "count": 582, "percentage": 2.84}, {"status_plataforma": "Prestação de Contas enviada para Análise", "count": 387, "percentage": 1.89}, {"status_plataforma": "Aguardando Prestação de Contas", "count": 208, "percentage": 1.01}, {"status_plataforma": "Inadimplente", "count": 184, "percentage": 0.9}], "d_empty_h_stats": [{"status_plataforma": "Prestação de Contas Concluída", "count": 6282, "percentage": 33.95}, {"status_plataforma": "Prestação de Contas Aprovada", "count": 5122, "percentage": 27.68}, {"status_plataforma": "Convênio Anulado", "count": 3160, "percentage": 17.08}, {"status_plataforma": "Em execução", "count": 1770, "percentage": 9.57}, {"status_plataforma": "Prestação de Contas Aprovada com Ressalvas", "count": 1041, "percentage": 5.63}, {"status_plataforma": "Prestação de Contas Rejeitada", "count": 576, "percentage": 3.11}, {"status_plataforma": "Aguardando Prestação de Contas", "count": 187, "percentage": 1.01}, {"status_plataforma": "Convênio Rescindido", "count": 165, "percentage": 0.89}, {"status_plataforma": "Prestação de Contas em Análise", "count": 55, "percentage": 0.3}, {"status_plataforma": "Cancelado", "count": 52, "percentage": 0.28}, {"status_plataforma": "Prestação de Contas Iniciada Por Antecipação", "count": 32, "percentage": 0.17}, {"status_plataforma": "Prestação de Contas enviada para Análise", "count": 28, "percentage": 0.15}, {"status_plataforma": "Prestação de Contas em Complementação", "count": 18, "percentage": 0.1}, {"status_plataforma": "Prestação de Contas Comprovada em Análise", "count": 6, "percentage": 0.03}, {"status_plataforma": "Proposta/Plano de Trabalho Aprovado", "count": 5, "percentage": 0.03}, {"status_plataforma": "Inadimplente", "count": 3, "percentage": 0.02}], "i_stats": [{"observacao": "CONCLUÍDA A TRAMITAÇÃO NO SEI/MTUR E TRANSFERIDO PARA O SEI/MINC", "count": 245}, {"observacao": "CONCLUÍDO NO SIAFI", "count": 123}, {"observacao": "JULGADA PELO TCU/CADIN INSCRITO", "count": 108}, {"observacao": "CV NÃO ESTÁ DIGITALIZADO. NO TRANSFEREGOV A NOTA DE LANÇAMENTO DIZ QUE A PC FOI APROVADA. NO SIAFI A SITUAÇÃO É ATIVA", "count": 93}, {"observacao": "EM TCE NO MTUR", "count": 88}, {"observacao": "CV NÃO ESTÁ DIGITALIZADO. NO TRANSFEREGOV A NOTA DE LANÇAMENTO NÃO DIZ NADA SOBRE APROVAÇÃO DA PC. NO SIAFI A SITUAÇÃO É ATIVA", "count": 60}, {"observacao": "TRANSFEREGOV DESATUALIZADO", "count": 37}, {"observacao": "ENCERRADO NO SEI MTUR", "count": 35}, {"observacao": "TCE ENVIADA À CGU", "count": 30}, {"observacao": "PROCESSO DA CULTURA", "count": 28}, {"observacao": "JULGADA PELO TCU", "count": 27}, {"observacao": "TCE ENVIADA AO TCU", "count": 26}, {"observacao": "ENVIADA AO TCU", "count": 24}, {"observacao": "TCE ENVIADA À CGU E O PROCESSO ARQUIVADO", "count": 18}, {"observacao": "ESTÁ NA PASTA CAFTC/PASSIVO - NÃO TEM DCTO DE CONCLUSÃO DE TRAMITAÇÃO NO SEI MTUR E TRANSFERENCIA P/ O SEI/MINC", "count": 12}], "j_stats": [{"encaminhamento": "IR ATRÁS DO PROCESSO FÍSICO P/ VER A SITUAÇÃO", "count": 65}, {"encaminhamento": "AJUSTAR SIAFI?", "count": 56}, {"encaminhamento": "PROSSEGUIMENTO DE TCE", "count": 43}, {"encaminhamento": "INSTAURAR TCE - HÁ PRESCRIÇÃO", "count": 25}, {"encaminhamento": "AJUSTAR SIAFI", "count": 23}, {"encaminhamento": "VERIFICAR INSCRIÇÃO NO CADIN // AJUSTAR SIAFI?", "count": 17}, {"encaminhamento": "VER O PROCESSO FÍSICO PARA CONFIRMAR A SITUAÇÃO ATUAL", "count": 17}, {"encaminhamento": "NÃO HÁ / CONCLUIR NO TRANSFERE", "count": 14}, {"encaminhamento": "VERIFICAR ANDAMENTO DA TCE, SE NECESSÁRIO", "count": 12}, {"encaminhamento": "VER O PROCESSO FÍSICO PARA CONFIRMAR A SITUAÇÃO ATUAL E ATUALIZAR TRANSFEREGOV E SIAFI", "count": 10}, {"encaminhamento": "SARAH VIU O FÍSICO.", "count": 9}, {"encaminhamento": "AJUSTAR SIAFI, PARA A APROVAR OU CONCLUIR?", "count": 9}, {"encaminhamento": "VERIFICAR COM A TCE", "count": 6}, {"encaminhamento": "CONCLUIR NO TRANSFEREGOV", "count": 6}, {"encaminhamento": "NOTIFICAR RESULTADO PC - HÁ PRESCRIÇÃO", "count": 6}]};
+        
+        // Format values with thousands separators
+        document.getElementById('kpi-total-val').textContent = rawData.total_a.toLocaleString('pt-BR');
+        document.getElementById('kpi-filled-val').textContent = rawData.total_h_filled.toLocaleString('pt-BR');
+        document.getElementById('kpi-empty-val').textContent = rawData.total_h_empty.toLocaleString('pt-BR');
+        
+        const filledPct = ((rawData.total_h_filled / rawData.total_a) * 100).toFixed(2);
+        const emptyPct = ((rawData.total_h_empty / rawData.total_a) * 100).toFixed(2);
+        
+        document.getElementById('kpi-filled-pct').textContent = filledPct + '%';
+        document.getElementById('kpi-empty-pct').textContent = emptyPct + '%';
+        
+        // Populate KPI details
+        
+        // 1. Total (all column D)
+        const totalDetailsContainer = document.getElementById('kpi-total-details');
+        const topDOverall = rawData.d_stats.slice(0, 4);
+        const sumTopDOverallCount = topDOverall.reduce((sum, item) => sum + item.count, 0);
+        topDOverall.forEach(item => {
+            const pct = ((item.count / rawData.total_a) * 100).toFixed(1);
+            const rowDiv = document.createElement('div');
+            rowDiv.style.display = 'flex';
+            rowDiv.style.justify = 'space-between';
+            rowDiv.style.alignItems = 'center';
+            rowDiv.innerHTML = `
+                <span style="color: var(--text-main); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 175px;" title="${item.status_plataforma}">${item.status_plataforma}</span>
+                <span style="color: var(--text-muted); font-size: 0.72rem; display: flex; gap: 0.25rem; align-items: center; flex-shrink: 0;">
+                    <span style="background: rgba(59, 130, 246, 0.12); padding: 1px 4px; border-radius: 3px; font-weight: 600; color: #60a5fa;">${item.count.toLocaleString('pt-BR')}</span>
+                    <span>(${pct}%)</span>
+                </span>
+            `;
+            totalDetailsContainer.appendChild(rowDiv);
+        });
+        if (rawData.total_a > sumTopDOverallCount) {
+            const othersCount = rawData.total_a - sumTopDOverallCount;
+            const othersPct = ((othersCount / rawData.total_a) * 100).toFixed(1);
+            const rowDiv = document.createElement('div');
+            rowDiv.style.display = 'flex';
+            rowDiv.style.justify = 'space-between';
+            rowDiv.style.alignItems = 'center';
+            rowDiv.innerHTML = `
+                <span style="color: var(--text-muted); font-style: italic;">OUTROS</span>
+                <span style="color: var(--text-muted); font-size: 0.72rem; display: flex; gap: 0.25rem; align-items: center;">
+                    <span style="background: rgba(255, 255, 255, 0.05); padding: 1px 4px; border-radius: 3px; font-weight: 500; color: var(--text-muted);">${othersCount.toLocaleString('pt-BR')}</span>
+                    <span>(${othersPct}%)</span>
+                </span>
+            `;
+            totalDetailsContainer.appendChild(rowDiv);
+        }
+
+        // 2. Filled (column H stats)
+        const filledDetailsContainer = document.getElementById('kpi-filled-details');
+        const topH = rawData.h_stats.slice(0, 4);
+        const sumTopHCount = topH.reduce((sum, item) => sum + item.count, 0);
+        topH.forEach(item => {
+            const pct = ((item.count / rawData.total_h_filled) * 100).toFixed(1);
+            const rowDiv = document.createElement('div');
+            rowDiv.style.display = 'flex';
+            rowDiv.style.justify = 'space-between';
+            rowDiv.style.alignItems = 'center';
+            rowDiv.innerHTML = `
+                <span style="color: var(--text-main); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 175px;" title="${item.status}">${item.status}</span>
+                <span style="color: var(--text-muted); font-size: 0.72rem; display: flex; gap: 0.25rem; align-items: center; flex-shrink: 0;">
+                    <span style="background: rgba(139, 92, 246, 0.12); padding: 1px 4px; border-radius: 3px; font-weight: 600; color: #a78bfa;">${item.count.toLocaleString('pt-BR')}</span>
+                    <span>(${pct}%)</span>
+                </span>
+            `;
+            filledDetailsContainer.appendChild(rowDiv);
+        });
+        if (rawData.total_h_filled > sumTopHCount) {
+            const othersCount = rawData.total_h_filled - sumTopHCount;
+            const othersPct = ((othersCount / rawData.total_h_filled) * 100).toFixed(1);
+            const rowDiv = document.createElement('div');
+            rowDiv.style.display = 'flex';
+            rowDiv.style.justify = 'space-between';
+            rowDiv.style.alignItems = 'center';
+            rowDiv.innerHTML = `
+                <span style="color: var(--text-muted); font-style: italic;">OUTROS</span>
+                <span style="color: var(--text-muted); font-size: 0.72rem; display: flex; gap: 0.25rem; align-items: center;">
+                    <span style="background: rgba(255, 255, 255, 0.05); padding: 1px 4px; border-radius: 3px; font-weight: 500; color: var(--text-muted);">${othersCount.toLocaleString('pt-BR')}</span>
+                    <span>(${othersPct}%)</span>
+                </span>
+            `;
+            filledDetailsContainer.appendChild(rowDiv);
+        }
+
+        // 3. Empty (column D empty H stats)
+        const emptyDetailsContainer = document.getElementById('kpi-empty-details');
+        const topDEmpty = rawData.d_empty_h_stats.slice(0, 4);
+        const sumTopDEmptyCount = topDEmpty.reduce((sum, item) => sum + item.count, 0);
+        topDEmpty.forEach(item => {
+            const pct = ((item.count / rawData.total_h_empty) * 100).toFixed(1);
+            const rowDiv = document.createElement('div');
+            rowDiv.style.display = 'flex';
+            rowDiv.style.justify = 'space-between';
+            rowDiv.style.alignItems = 'center';
+            rowDiv.innerHTML = `
+                <span style="color: var(--text-main); text-overflow: ellipsis; overflow: hidden; white-space: nowrap; max-width: 175px;" title="${item.status_plataforma}">${item.status_plataforma}</span>
+                <span style="color: var(--text-muted); font-size: 0.72rem; display: flex; gap: 0.25rem; align-items: center; flex-shrink: 0;">
+                    <span style="background: rgba(245, 158, 11, 0.12); padding: 1px 4px; border-radius: 3px; font-weight: 600; color: #fbbf24;">${item.count.toLocaleString('pt-BR')}</span>
+                    <span>(${pct}%)</span>
+                </span>
+            `;
+            emptyDetailsContainer.appendChild(rowDiv);
+        });
+        if (rawData.total_h_empty > sumTopDEmptyCount) {
+            const othersCount = rawData.total_h_empty - sumTopDEmptyCount;
+            const othersPct = ((othersCount / rawData.total_h_empty) * 100).toFixed(1);
+            const rowDiv = document.createElement('div');
+            rowDiv.style.display = 'flex';
+            rowDiv.style.justify = 'space-between';
+            rowDiv.style.alignItems = 'center';
+            rowDiv.innerHTML = `
+                <span style="color: var(--text-muted); font-style: italic;">OUTROS</span>
+                <span style="color: var(--text-muted); font-size: 0.72rem; display: flex; gap: 0.25rem; align-items: center;">
+                    <span style="background: rgba(255, 255, 255, 0.05); padding: 1px 4px; border-radius: 3px; font-weight: 500; color: var(--text-muted);">${othersCount.toLocaleString('pt-BR')}</span>
+                    <span>(${othersPct}%)</span>
+                </span>
+            `;
+            emptyDetailsContainer.appendChild(rowDiv);
+        }
+        
+        // Setup ChartJS Defaults for dark theme
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.borderColor = 'rgba(255, 255, 255, 0.05)';
+        Chart.defaults.font.family = "'Inter', sans-serif";
+        
+        // Register datalabels plugin globally
+        Chart.register(ChartDataLabels);
+
+        // 1. Chart Column D (Doughnut Chart)
+        const dLabels = rawData.d_stats.slice(0, 7).map(item => item.status_plataforma);
+        const dCounts = rawData.d_stats.slice(0, 7).map(item => item.count);
+        if (rawData.d_stats.length > 7) {
+            dLabels.push("OUTROS");
+            const othersCount = rawData.d_stats.slice(7).reduce((acc, curr) => acc + curr.count, 0);
+            dCounts.push(othersCount);
+        }
+        const ctxD = document.getElementById('chartColumnD').getContext('2d');
+        new Chart(ctxD, {
+            type: 'doughnut',
+            plugins: [ChartDataLabels],
+            data: {
+                labels: dLabels,
+                datasets: [{
+                    data: dCounts,
+                    backgroundColor: [
+                        '#10b981', '#3b82f6', '#ef4444', '#f59e0b', 
+                        '#8b5cf6', '#ec4899', '#06b6d4', '#64748b'
+                    ],
+                    borderWidth: 2,
+                    borderColor: '#131b2e'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            boxWidth: 10,
+                            padding: 8,
+                            font: { size: 9 },
+                            color: '#e2e8f0'
+                        }
+                    },
+                    datalabels: {
+                        color: '#ffffff',
+                        textStrokeColor: '#131b2e',
+                        textStrokeWidth: 2.5,
+                        font: {
+                            family: "'Inter', sans-serif",
+                            weight: '700',
+                            size: 10
+                        },
+                        textAlign: 'center',
+                        formatter: function(value, context) {
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const pct = ((value / total) * 100).toFixed(1);
+                            if (pct > 3.5) {
+                                return `${value.toLocaleString('pt-BR')}\n(${pct}%)`;
+                            }
+                            return '';
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const val = context.raw;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const pct = ((val / total) * 100).toFixed(2);
+                                return ` ${context.label}: ${val.toLocaleString('pt-BR')} (${pct}%)`;
+                            }
+                        }
+                    }
+                },
+                cutout: '45%'
+            }
+        });
+
+        // 2. Chart Column H (Doughnut Chart)
+        const hLabels = rawData.h_stats.slice(0, 8).map(item => item.status);
+        const hCounts = rawData.h_stats.slice(0, 8).map(item => item.count);
+        
+        if (rawData.h_stats.length > 8) {
+            hLabels.push("OUTROS");
+            const othersCount = rawData.h_stats.slice(8).reduce((acc, curr) => acc + curr.count, 0);
+            hCounts.push(othersCount);
+        }
+
+        const ctxH = document.getElementById('chartColumnH').getContext('2d');
+        new Chart(ctxH, {
+            type: 'doughnut',
+            plugins: [ChartDataLabels],
+            data: {
+                labels: hLabels,
+                datasets: [{
+                    data: hCounts,
+                    backgroundColor: [
+                        '#3b82f6', '#8b5cf6', '#06b6d4', '#10b981', 
+                        '#f59e0b', '#ec4899', '#ef4444', '#14b8a6', '#64748b'
+                    ],
+                    borderWidth: 2,
+                    borderColor: '#131b2e'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                        labels: {
+                            boxWidth: 10,
+                            padding: 8,
+                            font: { size: 9 },
+                            color: '#e2e8f0'
+                        }
+                    },
+                    datalabels: {
+                        color: '#ffffff',
+                        textStrokeColor: '#131b2e',
+                        textStrokeWidth: 2.5,
+                        font: {
+                            family: "'Inter', sans-serif",
+                            weight: '700',
+                            size: 10
+                        },
+                        textAlign: 'center',
+                        formatter: function(value, context) {
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const pct = ((value / total) * 100).toFixed(1);
+                            if (pct > 3.5) {
+                                return `${value.toLocaleString('pt-BR')}\n(${pct}%)`;
+                            }
+                            return '';
+                        }
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const val = context.raw;
+                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                const pct = ((val / total) * 100).toFixed(2);
+                                return ` ${context.label}: ${val.toLocaleString('pt-BR')} (${pct}%)`;
+                            }
+                        }
+                    }
+                },
+                cutout: '45%'
+            }
+        });
+
+        // 3. Combined Chart Columns I and J (Horizontal Bar Chart with Legend)
+        // Show top 8 of each
+        const iItems = rawData.i_stats.slice(0, 8);
+        const jItems = rawData.j_stats.slice(0, 8);
+
+        const combinedLabels = [
+            ...iItems.map(item => item.observacao.length > 35 ? item.observacao.slice(0, 33) + '...' : item.observacao),
+            ...jItems.map(item => item.encaminhamento.length > 35 ? item.encaminhamento.slice(0, 33) + '...' : item.encaminhamento)
+        ];
+
+        const iData = [
+            ...iItems.map(item => item.count),
+            ...new Array(jItems.length).fill(0)
+        ];
+
+        const jData = [
+            ...new Array(iItems.length).fill(0),
+            ...jItems.map(item => item.count)
+        ];
+
+        const ctxIeJ = document.getElementById('chartColumnIeJ').getContext('2d');
+        new Chart(ctxIeJ, {
+            type: 'bar',
+            data: {
+                labels: combinedLabels,
+                datasets: [
+                    {
+                        label: 'Coluna I (Observações)',
+                        data: iData,
+                        backgroundColor: 'rgba(6, 182, 212, 0.75)',
+                        hoverBackgroundColor: '#06b6d4',
+                        borderRadius: 4,
+                        barPercentage: 0.8
+                    },
+                    {
+                        label: 'Coluna J (Encaminhamentos Necessários)',
+                        data: jData,
+                        backgroundColor: 'rgba(139, 92, 246, 0.75)',
+                        hoverBackgroundColor: '#8b5cf6',
+                        borderRadius: 4,
+                        barPercentage: 0.8
+                    }
+                ]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            color: '#94a3b8',
+                            font: { size: 11, weight: '600' }
+                        }
+                    },
+                    datalabels: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function(context) {
+                                const idx = context[0].dataIndex;
+                                if (idx < iItems.length) {
+                                    return "Coluna I (Observação):";
+                                } else {
+                                    return "Coluna J (Encaminhamento):";
+                                }
+                            },
+                            label: function(context) {
+                                const idx = context.dataIndex;
+                                let fullText = "";
+                                if (idx < iItems.length) {
+                                    fullText = iItems[idx].observacao;
+                                } else {
+                                    fullText = jItems[idx - iItems.length].encaminhamento;
+                                }
+                                return ` Texto: ${fullText}\n Casos: ${context.raw}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        stacked: true,
+                        grid: { display: false },
+                        ticks: { color: '#94a3b8' }
+                    },
+                    y: {
+                        stacked: true,
+                        grid: { display: false },
+                        ticks: { 
+                            color: '#94a3b8',
+                            font: { size: 9 }
+                        }
+                    }
+                }
+            }
+        });
+
+        // Populate Table Column I
+        const tableBodyObs = document.getElementById('table-observations');
+        rawData.i_stats.forEach((item) => {
+            const tr = document.createElement('tr');
+            
+            const tdText = document.createElement('td');
+            tdText.textContent = item.observacao;
+            
+            const tdCount = document.createElement('td');
+            tdCount.style.textAlign = 'center';
+            tdCount.style.fontWeight = '600';
+            
+            const badge = document.createElement('span');
+            badge.className = 'badge-count';
+            badge.style.background = 'rgba(6, 182, 212, 0.15)';
+            badge.style.color = '#22d3ee';
+            badge.textContent = item.count;
+            
+            tdCount.appendChild(badge);
+            tr.appendChild(tdText);
+            tr.appendChild(tdCount);
+            tableBodyObs.appendChild(tr);
+        });
+
+        // Populate Table Column J
+        const tableBodyAct = document.getElementById('table-actions');
+        rawData.j_stats.forEach((item) => {
+            const tr = document.createElement('tr');
+            
+            const tdText = document.createElement('td');
+            tdText.textContent = item.encaminhamento;
+            
+            const tdCount = document.createElement('td');
+            tdCount.style.textAlign = 'center';
+            tdCount.style.fontWeight = '600';
+            
+            const badge = document.createElement('span');
+            badge.className = 'badge-count';
+            badge.style.background = 'rgba(139, 92, 246, 0.15)';
+            badge.style.color = '#c084fc';
+            badge.textContent = item.count;
+            
+            tdCount.appendChild(badge);
+            tr.appendChild(tdText);
+            tr.appendChild(tdCount);
+            tableBodyAct.appendChild(tr);
+        });
+    </script>
+</body>
+</html>
