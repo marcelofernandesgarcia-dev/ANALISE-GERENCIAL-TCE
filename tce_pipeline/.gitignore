@@ -1,0 +1,12 @@
+# Python files
+__pycache__/
+*.pyc
+
+# Excel temp files
+~$*
+
+# Project backups
+planilha/backups/
+
+# Debug output
+dashboard_data.json
